@@ -42,9 +42,14 @@ contrastSaturation = 0.35;
 
 // SCALE BAR PARAMETERS
 // --------------------------------------------------------------------------------
-// Physical length of the scale bar in micrometers (μm)
+// Physical length of the scale bar in micrometers (um)
 // Examples: 0.5, 1, 2, 5, 10
 scaleBarWidth = 1;
+
+// Maximum fraction of the image width the scale bar should occupy.
+// The script picks the largest clean scale bar length that fits this limit.
+// Examples: 0.20, 0.25, 0.33
+scaleBarMaxImageFraction = 0.25;
 
 // Height of the scale bar text label (in pixels)
 // Examples: 10, 15, 20, 25
@@ -73,6 +78,59 @@ scaleBarLocation = "[Lower Right]";
 // ==================================================================================
 // END OF CONFIGURATION PARAMETERS
 // ==================================================================================
+
+// Convert the configured micrometer scale bar width to the image calibration unit.
+function convertMicrometersToImageUnit(widthMicrometers, imageUnit) {
+    unit = toLowerCase(imageUnit);
+
+    if (unit == "um" || unit == "µm" || unit == "micron" || unit == "microns" || unit == "micrometer" || unit == "micrometers" || unit == "micrometre" || unit == "micrometres")
+        return widthMicrometers;
+
+    if (unit == "nm" || unit == "nanometer" || unit == "nanometers" || unit == "nanometre" || unit == "nanometres")
+        return widthMicrometers * 1000;
+
+    if (unit == "mm" || unit == "millimeter" || unit == "millimeters" || unit == "millimetre" || unit == "millimetres")
+        return widthMicrometers / 1000;
+
+    if (unit == "cm" || unit == "centimeter" || unit == "centimeters" || unit == "centimetre" || unit == "centimetres")
+        return widthMicrometers / 10000;
+
+    exit("Unsupported image calibration unit '" + imageUnit + "' for scale bar conversion.");
+}
+
+// Pick the largest clean 1/2/5 scale bar width that fits the target width.
+function getNiceScaleBarWidth(maxWidth) {
+    if (maxWidth <= 0)
+        exit("Scale bar width must be greater than zero.");
+
+    niceWidth = 1;
+
+    while (niceWidth > maxWidth)
+        niceWidth = niceWidth / 10;
+
+    while (niceWidth * 10 <= maxWidth)
+        niceWidth = niceWidth * 10;
+
+    if (niceWidth * 5 <= maxWidth)
+        return niceWidth * 5;
+
+    if (niceWidth * 2 <= maxWidth)
+        return niceWidth * 2;
+
+    return niceWidth;
+}
+
+// Use the configured width as an upper limit, but shrink it for high magnification images.
+function getAutomaticScaleBarWidth(configuredWidth, imageWidthPixels, pixelWidth, maxImageFraction) {
+    maxVisibleWidth = imageWidthPixels * pixelWidth * maxImageFraction;
+
+    if (configuredWidth < maxVisibleWidth)
+        targetWidth = configuredWidth;
+    else
+        targetWidth = maxVisibleWidth;
+
+    return getNiceScaleBarWidth(targetWidth);
+}
 
 
 // ==================================================================================
@@ -104,12 +162,18 @@ for (i = 0; i < list.length; i++) {
         // Store the original image title for later reference
         originalTitle = getTitle();
 
+        // Convert the configured micrometer width into the image's current unit
+        getPixelSize(imageUnit, pixelWidth, pixelHeight, voxelDepth);
+        convertedScaleBarWidth = convertMicrometersToImageUnit(scaleBarWidth, imageUnit);
+        automaticScaleBarWidth = getAutomaticScaleBarWidth(convertedScaleBarWidth, getWidth(), pixelWidth, scaleBarMaxImageFraction);
+        print(list[i] + ": scale bar " + scaleBarWidth + " um requested, using " + automaticScaleBarWidth + " " + imageUnit);
+
         // Enhance contrast (stretches the histogram to improve visibility)
         run("Enhance Contrast", "saturated=" + contrastSaturation);
 
         // Add scale bar as an overlay to the image
         run("Scale Bar...", 
-            "width=" + scaleBarWidth + 
+            "width=" + automaticScaleBarWidth + 
             " height=" + scaleBarHeight + 
             " thickness=" + scaleBarThickness + 
             " font=" + scaleBarFont + 
